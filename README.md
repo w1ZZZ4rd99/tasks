@@ -1,7 +1,8 @@
-# Banking System (OOP)
+# Banking System — Day 1
 
-An OOP banking-system assignment, split by day into stacked branches:
-`day1 → day2 → day3 → day4 → day5 → day6` — each branch builds on the previous one
-for incremental review.
+## Run
 
-Check out a day's branch and follow its README to run it.
+    python -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+    .venv/bin/python -m src.main     # demo
+    .venv/bin/python -m pytest       # tests

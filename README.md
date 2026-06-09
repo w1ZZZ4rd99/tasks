@@ -1,4 +1,4 @@
-# Banking System — Day 1
+# Banking System — Day 2
 
 ## Run
 

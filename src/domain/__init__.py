@@ -15,6 +15,9 @@ from .enums import (
     AssetClass,
     ClientStatus,
     Currency,
+    TransactionPriority,
+    TransactionStatus,
+    TransactionType,
 )
 from .errors import (
     AccountClosedError,
@@ -27,9 +30,15 @@ from .errors import (
     InsufficientFundsError,
     InvalidOperationError,
     NightOperationError,
+    TransactionError,
     UnderageError,
+    UnknownCurrencyRateError,
 )
+from .exchange import DEFAULT_RATES, ExchangeRates
 from .money import MONEY_QUANT, decimal_nonneg, parse_amount, quantize_money
+from .processor import FeePolicy, TransactionProcessor
+from .transaction_queue import TransactionQueue
+from .transactions import Transaction
 
 __all__ = [
     "AbstractAccount",
@@ -45,6 +54,15 @@ __all__ = [
     "ClientStatus",
     "AssetClass",
     "ANNUAL_RETURNS",
+    "TransactionType",
+    "TransactionStatus",
+    "TransactionPriority",
+    "Transaction",
+    "TransactionQueue",
+    "TransactionProcessor",
+    "FeePolicy",
+    "ExchangeRates",
+    "DEFAULT_RATES",
     "DomainError",
     "InvalidOperationError",
     "InsufficientFundsError",
@@ -53,6 +71,8 @@ __all__ = [
     "UnderageError",
     "ClientBlockedError",
     "NightOperationError",
+    "TransactionError",
+    "UnknownCurrencyRateError",
     "EntityNotFoundError",
     "ClientNotFoundError",
     "AccountNotFoundError",

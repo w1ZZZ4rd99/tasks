@@ -66,17 +66,21 @@ class Bank:
         self._clients[client.client_id] = client
         return client
 
-    def _get_client(self, client_id: str) -> Client:
+    def get_client(self, client_id: str) -> Client:
         try:
             return self._clients[client_id]
         except KeyError:
             raise ClientNotFoundError(f"No client with id {client_id!r}")
 
-    def _get_account(self, account_id: str) -> AbstractAccount:
+    def get_account(self, account_id: str) -> AbstractAccount:
         try:
             return self._accounts[account_id]
         except KeyError:
             raise AccountNotFoundError(f"No account with id {account_id!r}")
+
+    # Backwards-compatible internal aliases.
+    _get_client = get_client
+    _get_account = get_account
 
     # --- Accounts ----------------------------------------------------------------------
 

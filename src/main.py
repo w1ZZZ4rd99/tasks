@@ -7,6 +7,7 @@ Run with::
 
 from datetime import datetime
 
+from . import simulation
 from .domain import (
     AccountStatus,
     AssetClass,
@@ -227,6 +228,9 @@ def demo_audit_and_risk() -> None:
     print(f"\nSuspicious operations: {len(reporter.suspicious_operations())}")
     print(f"Client risk profile: {reporter.client_risk_profile(bank, 'C1')}")
     print(f"Error statistics: {reporter.error_statistics()}")
+
+    print("\n")
+    simulation.run()
 
 
 if __name__ == "__main__":

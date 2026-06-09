@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from .audit import AuditEvent, AuditLog
-from .enums import AuditSeverity, RiskLevel
+from .enums import AuditSeverity, RiskLevel, TransactionStatus
 
 _RISKY_LEVELS = {RiskLevel.MEDIUM.name, RiskLevel.HIGH.name}
 
@@ -75,3 +77,33 @@ def _level_name(level) -> str | None:
     if isinstance(level, RiskLevel):
         return level.name
     return level
+
+
+def transaction_statistics(transactions) -> dict:
+    """Aggregate counts, completed volume, and success rate over a transaction list."""
+    by_status = {status.name: 0 for status in TransactionStatus}
+    by_type: dict[str, int] = {}
+    total_volume = Decimal("0.00")
+
+    for tx in transactions:
+        by_status[tx.status.name] += 1
+        by_type[tx.type.value] = by_type.get(tx.type.value, 0) + 1
+        if tx.status is TransactionStatus.COMPLETED:
+            total_volume += tx.amount
+
+    total = len(transactions)
+    completed = by_status[TransactionStatus.COMPLETED.name]
+    success_rate = round(completed / total, 4) if total else 0.0
+    return {
+        "total": total,
+        "by_status": by_status,
+        "by_type": by_type,
+        "total_volume": total_volume,
+        "success_rate": success_rate,
+    }
+
+
+def client_transactions(bank, client_id: str, transactions) -> list:
+    """Return transactions whose sender or receiver is one of the client's accounts."""
+    owned = set(bank.get_client(client_id).account_numbers)
+    return [tx for tx in transactions if tx.sender in owned or tx.receiver in owned]

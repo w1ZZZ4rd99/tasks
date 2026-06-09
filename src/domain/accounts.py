@@ -1,79 +1,31 @@
-"""Core domain models for bank accounts.
+"""Bank account models.
 
-An abstract account base encapsulates shared state and validation; ``BankAccount`` is the
-concrete type. Monetary values use :class:`decimal.Decimal` for correct money arithmetic
-(binary floats cannot represent values like ``0.10`` exactly).
+An abstract account base encapsulates shared state and validation; concrete types
+(``BankAccount`` and its subclasses) implement operations with their own rules.
 """
 
 from __future__ import annotations
 
 import uuid
 from abc import ABC, abstractmethod
-from decimal import Decimal, InvalidOperation
-from enum import Enum
+from decimal import Decimal
 
+from .enums import ANNUAL_RETURNS, AccountStatus, AssetClass, Currency
 from .errors import (
     AccountClosedError,
     AccountFrozenError,
     InsufficientFundsError,
     InvalidOperationError,
 )
-
-# Two decimal places is enough for the currencies we support.
-_MONEY_QUANT = Decimal("0.01")
-
-
-class Currency(Enum):
-    """Supported account currencies."""
-
-    RUB = "RUB"
-    USD = "USD"
-    EUR = "EUR"
-    KZT = "KZT"
-    CNY = "CNY"
-
-
-class AccountStatus(Enum):
-    """Lifecycle status of an account; only ``ACTIVE`` accounts may transact."""
-
-    ACTIVE = "active"
-    FROZEN = "frozen"
-    CLOSED = "closed"
-
-
-class AssetClass(Enum):
-    """Virtual asset classes an investment portfolio may hold."""
-
-    STOCKS = "stocks"
-    BONDS = "bonds"
-    ETF = "etf"
-
-
-# Assumed annual return rate per asset class, used for growth projections.
-ANNUAL_RETURNS = {
-    AssetClass.STOCKS: Decimal("0.10"),
-    AssetClass.BONDS: Decimal("0.04"),
-    AssetClass.ETF: Decimal("0.07"),
-}
-
-
-def _decimal_nonneg(value, field: str) -> Decimal:
-    """Parse ``value`` into a non-negative Decimal or raise."""
-    try:
-        result = Decimal(str(value))
-    except (InvalidOperation, ValueError, TypeError):
-        raise InvalidOperationError(f"{field} is not a number: {value!r}")
-    if result.is_nan() or result < 0:
-        raise InvalidOperationError(f"{field} must be non-negative")
-    return result
+from .money import decimal_nonneg, parse_amount, quantize_money
 
 
 class AbstractAccount(ABC):
     """Abstract base for every account type.
 
-    Holds the state shared by all accounts (id, owner, balance, status, currency) and the
-    reusable validation helpers. Subclasses implement the actual operations so that different
-    account types can apply their own rules (overdraft, interest, fees, ...).
+    Holds the state shared by all accounts (id, owner, balance, status, currency). Subclasses
+    implement the actual operations so different account types can apply their own rules
+    (overdraft, interest, fees, ...).
     """
 
     def __init__(
@@ -112,26 +64,17 @@ class AbstractAccount(ABC):
     def currency(self) -> Currency:
         return self._currency
 
+    def set_status(self, status: AccountStatus) -> None:
+        """Update the account status (used by the managing Bank)."""
+        if not isinstance(status, AccountStatus):
+            raise InvalidOperationError("status must be an AccountStatus")
+        self._status = status
+
     # --- Shared validation reused by subclasses ---------------------------------------
 
     def _validate_amount(self, amount) -> Decimal:
-        """Normalize and validate an operation amount.
-
-        Returns the amount as a quantized ``Decimal``. Rejects non-numeric input, NaN, zero,
-        and negative values with :class:`InvalidOperationError`.
-        """
-        # Avoid float -> Decimal binary noise by going through ``str``.
-        try:
-            value = Decimal(str(amount))
-        except (InvalidOperation, ValueError, TypeError):
-            raise InvalidOperationError(f"Amount is not a valid number: {amount!r}")
-
-        if value.is_nan():
-            raise InvalidOperationError("Amount must be a real number, not NaN")
-        if value <= 0:
-            raise InvalidOperationError("Amount must be positive")
-
-        return value.quantize(_MONEY_QUANT)
+        """Validate and normalize a strictly positive operation amount."""
+        return parse_amount(amount)
 
     def _ensure_operational(self) -> None:
         """Raise if the account's status forbids transactions."""
@@ -178,7 +121,7 @@ class BankAccount(AbstractAccount):
         if not isinstance(currency, Currency):
             raise InvalidOperationError("currency must be a Currency")
 
-        initial = self._validate_initial_balance(balance)
+        initial = quantize_money(decimal_nonneg(balance, "Initial balance"))
         # Generate a short, human-friendly id when none is supplied.
         resolved_id = account_id if account_id else uuid.uuid4().hex[:8].upper()
 
@@ -189,16 +132,6 @@ class BankAccount(AbstractAccount):
             status=status,
             currency=currency,
         )
-
-    @staticmethod
-    def _validate_initial_balance(balance) -> Decimal:
-        try:
-            value = Decimal(str(balance))
-        except (InvalidOperation, ValueError, TypeError):
-            raise InvalidOperationError(f"Initial balance is not a number: {balance!r}")
-        if value.is_nan() or value < 0:
-            raise InvalidOperationError("Initial balance must be non-negative")
-        return value.quantize(_MONEY_QUANT)
 
     def deposit(self, amount) -> Decimal:
         self._ensure_operational()
@@ -236,19 +169,10 @@ class BankAccount(AbstractAccount):
 class SavingsAccount(BankAccount):
     """Interest-bearing account that must keep a minimum balance."""
 
-    def __init__(
-        self,
-        owner: str,
-        *,
-        min_balance=0,
-        monthly_rate=0,
-        **kwargs,
-    ) -> None:
+    def __init__(self, owner: str, *, min_balance=0, monthly_rate=0, **kwargs) -> None:
         super().__init__(owner, **kwargs)
-        self._min_balance = _decimal_nonneg(min_balance, "min_balance").quantize(
-            _MONEY_QUANT
-        )
-        self._monthly_rate = _decimal_nonneg(monthly_rate, "monthly_rate")
+        self._min_balance = quantize_money(decimal_nonneg(min_balance, "min_balance"))
+        self._monthly_rate = decimal_nonneg(monthly_rate, "monthly_rate")
 
     @property
     def min_balance(self) -> Decimal:
@@ -264,16 +188,15 @@ class SavingsAccount(BankAccount):
         value = self._validate_amount(amount)
         if self._balance - value < self._min_balance:
             raise InsufficientFundsError(
-                f"Withdrawal would breach the minimum balance of "
-                f"{self._min_balance}; available above minimum is "
-                f"{self._balance - self._min_balance}"
+                f"Withdrawal would breach the minimum balance of {self._min_balance}; "
+                f"available above minimum is {self._balance - self._min_balance}"
             )
         self._balance -= value
         return self._balance
 
     def apply_monthly_interest(self) -> Decimal:
         """Credit one month of interest on the current balance; return the amount added."""
-        interest = (self._balance * self._monthly_rate).quantize(_MONEY_QUANT)
+        interest = quantize_money(self._balance * self._monthly_rate)
         self._balance += interest
         return interest
 
@@ -287,9 +210,7 @@ class SavingsAccount(BankAccount):
         return info
 
     def __str__(self) -> str:
-        return (
-            f"{super().__str__()} | min={self._min_balance}, rate={self._monthly_rate}"
-        )
+        return f"{super().__str__()} | min={self._min_balance}, rate={self._monthly_rate}"
 
 
 class PremiumAccount(BankAccount):
@@ -305,15 +226,15 @@ class PremiumAccount(BankAccount):
         **kwargs,
     ) -> None:
         super().__init__(owner, **kwargs)
-        self._overdraft_limit = _decimal_nonneg(
-            overdraft_limit, "overdraft_limit"
-        ).quantize(_MONEY_QUANT)
-        self._withdrawal_limit = _decimal_nonneg(
-            withdrawal_limit, "withdrawal_limit"
-        ).quantize(_MONEY_QUANT)
-        self._transaction_fee = _decimal_nonneg(
-            transaction_fee, "transaction_fee"
-        ).quantize(_MONEY_QUANT)
+        self._overdraft_limit = quantize_money(
+            decimal_nonneg(overdraft_limit, "overdraft_limit")
+        )
+        self._withdrawal_limit = quantize_money(
+            decimal_nonneg(withdrawal_limit, "withdrawal_limit")
+        )
+        self._transaction_fee = quantize_money(
+            decimal_nonneg(transaction_fee, "transaction_fee")
+        )
 
     @property
     def overdraft_limit(self) -> Decimal:
@@ -369,9 +290,9 @@ class InvestmentAccount(BankAccount):
         # Portfolio maps each asset class to its current market value (cash is separate).
         self._portfolio = {asset: Decimal("0.00") for asset in AssetClass}
         for asset, value in (portfolio or {}).items():
-            self._portfolio[self._coerce_asset(asset)] = _decimal_nonneg(
-                value, "portfolio value"
-            ).quantize(_MONEY_QUANT)
+            self._portfolio[self._coerce_asset(asset)] = quantize_money(
+                decimal_nonneg(value, "portfolio value")
+            )
 
     @staticmethod
     def _coerce_asset(asset) -> AssetClass:
@@ -409,7 +330,7 @@ class InvestmentAccount(BankAccount):
             (value * ANNUAL_RETURNS[asset] for asset, value in self._portfolio.items()),
             Decimal("0"),
         )
-        return growth.quantize(_MONEY_QUANT)
+        return quantize_money(growth)
 
     def withdraw(self, amount) -> Decimal:
         """Withdraw from the cash balance only; invested holdings are not liquid."""

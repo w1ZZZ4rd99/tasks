@@ -4,14 +4,12 @@ from decimal import Decimal
 
 import pytest
 
-from src.errors import (
+from src.domain import (
     AccountFrozenError,
-    InsufficientFundsError,
-    InvalidOperationError,
-)
-from src.models import (
     AccountStatus,
     AssetClass,
+    InsufficientFundsError,
+    InvalidOperationError,
     InvestmentAccount,
     PremiumAccount,
     SavingsAccount,

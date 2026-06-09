@@ -67,7 +67,8 @@ class TransactionProcessor:
         self._logger = logger or logging.getLogger("bank.transactions")
         self.error_log: list[dict] = []
         self.history: list[Transaction] = []
-        self.audit = audit or AuditLog(now=now)
+        # Use `is None` (not `or`): an empty AuditLog is falsy via __len__.
+        self.audit = audit if audit is not None else AuditLog(now=now)
         self._risk = risk
         self._block_at = block_at
 

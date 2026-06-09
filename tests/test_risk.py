@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from src.domain import (
+    AuditLog,
     AuditReporter,
     Bank,
     Client,
@@ -101,6 +102,19 @@ def test_processor_blocks_high_risk_and_leaves_balance_untouched():
     assert "blocked by risk analysis" in tx.failure_reason
     assert usd.balance == Decimal("100000.00")  # never executed
     assert proc.audit.filter(action="transaction.blocked")
+
+
+def test_processor_uses_provided_empty_audit_log(tmp_path):
+    # Regression: an empty AuditLog is falsy via __len__, so `audit or ...` would discard it.
+    bank, usd = build_bank()
+    path = tmp_path / "audit.jsonl"
+    audit = AuditLog(file_path=str(path), now=midday)
+    proc = TransactionProcessor(bank, audit=audit, now=midday)
+    assert proc.audit is audit
+
+    proc.process(Transaction(TransactionType.DEPOSIT, 10, Currency.USD, receiver=usd.account_id))
+    assert len(audit) >= 1
+    assert path.exists()  # streamed to the file
 
 
 def test_processor_allows_normal_transaction():

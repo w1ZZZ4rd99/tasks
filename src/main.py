@@ -5,9 +5,12 @@ Run with::
     python -m src.main
 """
 
+from datetime import datetime
+
 from .domain import (
     AccountStatus,
     AssetClass,
+    AuditReporter,
     Bank,
     BankAccount,
     Client,
@@ -15,6 +18,7 @@ from .domain import (
     DomainError,
     InvestmentAccount,
     PremiumAccount,
+    RiskAnalyzer,
     SavingsAccount,
     Transaction,
     TransactionPriority,
@@ -188,6 +192,41 @@ def demo_transactions() -> None:
 
     print(f"\nFinal balances: USD {usd.balance}, EUR {eur.balance}")
     print(f"Errors logged: {len(processor.error_log)}")
+
+    demo_audit_and_risk()
+
+
+def demo_audit_and_risk() -> None:
+    print("\n=== Audit & risk analysis ===\n")
+    # Set the bank up during business hours; run the processor at night so the
+    # time-based risk rule fires deterministically.
+    midday = datetime(2026, 6, 9, 12, 0, 0)
+    night = datetime(2026, 6, 9, 2, 0, 0)
+    bank = Bank("Demo Bank", now=lambda: midday)
+    bank.add_client(Client("Alice", 30, pin="1", client_id="C1"))
+    account = bank.open_account("C1", "bank", balance=100000, currency=Currency.USD)
+
+    analyzer = RiskAnalyzer(large_amount=10000, frequency_limit=3)
+    processor = TransactionProcessor(bank, risk=analyzer, now=lambda: night)
+
+    transactions = [
+        Transaction(TransactionType.WITHDRAWAL, 100, Currency.USD, sender=account.account_id),
+        Transaction(TransactionType.WITHDRAWAL, 200, Currency.USD, sender=account.account_id),
+        # Large transfer to a brand-new external account, at night -> high risk.
+        Transaction(TransactionType.EXTERNAL_TRANSFER, 50000, Currency.USD,
+                    sender=account.account_id, receiver="EXT-NEW"),
+        # A burst of rapid operations trips the frequency rule.
+        Transaction(TransactionType.WITHDRAWAL, 50, Currency.USD, sender=account.account_id),
+        Transaction(TransactionType.WITHDRAWAL, 60, Currency.USD, sender=account.account_id),
+    ]
+    for tx in transactions:
+        processor.process(tx)
+        print(f"  {tx}" + (f"  ({tx.failure_reason})" if tx.failure_reason else ""))
+
+    reporter = AuditReporter(processor.audit)
+    print(f"\nSuspicious operations: {len(reporter.suspicious_operations())}")
+    print(f"Client risk profile: {reporter.client_risk_profile(bank, 'C1')}")
+    print(f"Error statistics: {reporter.error_statistics()}")
 
 
 if __name__ == "__main__":

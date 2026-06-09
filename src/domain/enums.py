@@ -63,6 +63,22 @@ class TransactionPriority(Enum):
     HIGH = 3
 
 
+class AuditSeverity(Enum):
+    """Severity of an audit event; higher value is more severe."""
+
+    INFO = 1
+    WARNING = 2
+    CRITICAL = 3
+
+
+class RiskLevel(Enum):
+    """Risk level assigned to an operation."""
+
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+
+
 # Assumed annual return rate per asset class, used for growth projections.
 ANNUAL_RETURNS = {
     AssetClass.STOCKS: Decimal("0.10"),

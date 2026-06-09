@@ -16,6 +16,11 @@ from .domain import (
     InvestmentAccount,
     PremiumAccount,
     SavingsAccount,
+    Transaction,
+    TransactionPriority,
+    TransactionProcessor,
+    TransactionQueue,
+    TransactionType,
     UnderageError,
 )
 
@@ -137,6 +142,52 @@ def demo_bank() -> None:
     print(f"USD accounts: {[a.account_id for a in usd_accounts]}")
     print(f"Total balance per currency: {bank.get_total_balance()}")
     print(f"Clients ranking: {bank.get_clients_ranking()}")
+
+    demo_transactions()
+
+
+def demo_transactions() -> None:
+    print("\n=== Transaction system ===\n")
+    bank = Bank("Demo Bank")
+    bank.add_client(Client("Alice", 30, pin="1", client_id="C1"))
+    bank.add_client(Client("Bob", 30, pin="2", client_id="C2"))
+    usd = bank.open_account("C1", "bank", balance=1000, currency=Currency.USD)
+    eur = bank.open_account("C2", "bank", balance=1000, currency=Currency.EUR)
+
+    processor = TransactionProcessor(bank)
+    queue = TransactionQueue()
+
+    transactions = [
+        Transaction(TransactionType.DEPOSIT, 200, Currency.USD, receiver=usd.account_id),
+        Transaction(TransactionType.WITHDRAWAL, 150, Currency.USD, sender=usd.account_id),
+        Transaction(TransactionType.TRANSFER, 100, Currency.USD,
+                    sender=usd.account_id, receiver=eur.account_id),
+        Transaction(TransactionType.EXTERNAL_TRANSFER, 100, Currency.USD,
+                    sender=usd.account_id, receiver="EXT-OUT"),
+        Transaction(TransactionType.WITHDRAWAL, 999999, Currency.USD, sender=usd.account_id),
+        Transaction(TransactionType.DEPOSIT, 25, Currency.USD, receiver=usd.account_id,
+                    priority=TransactionPriority.HIGH),
+        Transaction(TransactionType.DEPOSIT, 10, Currency.EUR, receiver=eur.account_id,
+                    priority=TransactionPriority.LOW),
+        Transaction(TransactionType.DEPOSIT, 5, Currency.USD, receiver=usd.account_id,
+                    transaction_id="CANCELLED-1"),
+        Transaction(TransactionType.DEPOSIT, 3, Currency.USD, receiver=usd.account_id),
+        Transaction(TransactionType.WITHDRAWAL, 50, Currency.EUR, sender=eur.account_id),
+    ]
+    for tx in transactions:
+        queue.add(tx)
+    queue.cancel("CANCELLED-1")
+
+    print(f"Queued {len(queue)} transactions; processing in priority order...\n")
+    processed = processor.process_queue(queue)
+    for tx in processed:
+        line = f"  {tx}"
+        if tx.failure_reason:
+            line += f"  (reason: {tx.failure_reason})"
+        print(line)
+
+    print(f"\nFinal balances: USD {usd.balance}, EUR {eur.balance}")
+    print(f"Errors logged: {len(processor.error_log)}")
 
 
 if __name__ == "__main__":

@@ -37,6 +37,14 @@ class NightOperationError(DomainError):
     """Raised when an operation is attempted during the nightly lockout window."""
 
 
+class TransactionError(DomainError):
+    """Raised when a transaction cannot be executed under the business rules."""
+
+
+class UnknownCurrencyRateError(DomainError):
+    """Raised when no exchange rate is available for a currency."""
+
+
 class EntityNotFoundError(DomainError):
     """Base for lookups that fail to find a registered entity."""
 

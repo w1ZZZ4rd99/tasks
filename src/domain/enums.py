@@ -37,6 +37,32 @@ class AssetClass(Enum):
     ETF = "etf"
 
 
+class TransactionType(Enum):
+    """Kinds of transactions the processor can execute."""
+
+    DEPOSIT = "deposit"
+    WITHDRAWAL = "withdrawal"
+    TRANSFER = "transfer"  # internal, between two of the bank's accounts
+    EXTERNAL_TRANSFER = "external_transfer"  # money leaving the bank
+
+
+class TransactionStatus(Enum):
+    """Lifecycle status of a transaction."""
+
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class TransactionPriority(Enum):
+    """Queue priority; higher value is served first."""
+
+    LOW = 1
+    NORMAL = 2
+    HIGH = 3
+
+
 # Assumed annual return rate per asset class, used for growth projections.
 ANNUAL_RETURNS = {
     AssetClass.STOCKS: Decimal("0.10"),

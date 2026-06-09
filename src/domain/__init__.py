@@ -40,7 +40,7 @@ from .errors import (
 from .exchange import DEFAULT_RATES, ExchangeRates
 from .money import MONEY_QUANT, decimal_nonneg, parse_amount, quantize_money
 from .processor import FeePolicy, TransactionProcessor
-from .reports import AuditReporter
+from .reports import AuditReporter, client_transactions, transaction_statistics
 from .risk import RiskAnalyzer, RiskAssessment
 from .transaction_queue import TransactionQueue
 from .transactions import Transaction
@@ -75,6 +75,8 @@ __all__ = [
     "RiskAnalyzer",
     "RiskAssessment",
     "AuditReporter",
+    "transaction_statistics",
+    "client_transactions",
     "DomainError",
     "InvalidOperationError",
     "InsufficientFundsError",

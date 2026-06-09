@@ -66,12 +66,16 @@ class TransactionProcessor:
         self._now = now
         self._logger = logger or logging.getLogger("bank.transactions")
         self.error_log: list[dict] = []
+        self.history: list[Transaction] = []
         self.audit = audit or AuditLog(now=now)
         self._risk = risk
         self._block_at = block_at
 
     def process(self, tx: Transaction) -> bool:
         """Process a single transaction; return True on success."""
+        # Record every processed transaction; the stored reference tracks its final status.
+        self.history.append(tx)
+
         if self._risk is not None and self._risk_blocks(tx):
             return False
 

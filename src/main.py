@@ -5,15 +5,18 @@ Run with::
     python -m src.main
 """
 
-from .errors import DomainError
-from .models import (
+from .domain import (
     AccountStatus,
     AssetClass,
+    Bank,
     BankAccount,
+    Client,
     Currency,
+    DomainError,
     InvestmentAccount,
     PremiumAccount,
     SavingsAccount,
+    UnderageError,
 )
 
 
@@ -83,6 +86,57 @@ def demo_account_types() -> None:
     holdings = {asset.value: str(value) for asset, value in invest.portfolio.items()}
     print(f"  portfolio: {holdings}")
     print(f"  projected yearly growth: {invest.project_yearly_growth()} {invest.currency.value}")
+
+    demo_bank()
+
+
+def demo_bank() -> None:
+    print("\n=== Bank system ===\n")
+    bank = Bank("Demo Bank")
+
+    # Underage clients are rejected.
+    try:
+        Client("Young Tom", 16, pin="0000")
+    except UnderageError as exc:
+        print(f"Underage client rejected -> {exc}")
+
+    alice = bank.add_client(Client("Alice Smith", 30, pin="1234", client_id="ALICE001"))
+    bob = bank.add_client(Client("Bob Jones", 45, pin="4321", client_id="BOB002"))
+
+    # Open accounts of different types.
+    a1 = bank.open_account(alice.client_id, "savings", balance=5000, min_balance=500,
+                           monthly_rate="0.04", currency=Currency.USD)
+    bank.open_account(alice.client_id, "premium", balance=2000, overdraft_limit=1000,
+                      transaction_fee=10, currency=Currency.USD)
+    bank.open_account(bob.client_id, "investment", balance=8000, currency=Currency.EUR)
+    print(f"{alice} | accounts: {alice.account_numbers}")
+    print(f"{bob} | accounts: {bob.account_numbers}\n")
+
+    # Freeze an account and show operations are blocked.
+    bank.freeze_account(a1.account_id)
+    print(f"Froze {a1.account_id}; status now {a1.status.value}")
+    try:
+        a1.withdraw(100)
+    except DomainError as exc:
+        print(f"  withdraw blocked -> {type(exc).__name__}: {exc}\n")
+    bank.unfreeze_account(a1.account_id)
+
+    # Authentication: correct pin, then three wrong pins -> blocked.
+    print(f"Authenticate Alice (correct pin): {bank.authenticate_client('ALICE001', '1234')}")
+    for _ in range(3):
+        bank.authenticate_client("BOB002", "0000")
+    print(f"Bob blocked after 3 bad logins: {bob.is_blocked}")
+    print(f"Bob suspicious flags: {bob.suspicious_flags}")
+    try:
+        bank.authenticate_client("BOB002", "4321")
+    except DomainError as exc:
+        print(f"  further auth blocked -> {type(exc).__name__}: {exc}\n")
+
+    # Search and analytics.
+    usd_accounts = bank.search_accounts(currency=Currency.USD)
+    print(f"USD accounts: {[a.account_id for a in usd_accounts]}")
+    print(f"Total balance per currency: {bank.get_total_balance()}")
+    print(f"Clients ranking: {bank.get_clients_ranking()}")
 
 
 if __name__ == "__main__":

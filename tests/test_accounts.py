@@ -4,13 +4,15 @@ from decimal import Decimal
 
 import pytest
 
-from src.errors import (
+from src.domain import (
     AccountClosedError,
     AccountFrozenError,
+    AccountStatus,
+    BankAccount,
+    Currency,
     InsufficientFundsError,
     InvalidOperationError,
 )
-from src.models import AccountStatus, BankAccount, Currency
 
 
 def test_auto_generates_short_id_when_missing():

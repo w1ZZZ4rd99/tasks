@@ -78,6 +78,13 @@ class Bank:
         except KeyError:
             raise AccountNotFoundError(f"No account with id {account_id!r}")
 
+    def find_client_by_account(self, account_id: str) -> Client | None:
+        """Return the client owning the given account, or None."""
+        for client in self._clients.values():
+            if account_id in client.account_numbers:
+                return client
+        return None
+
     # Backwards-compatible internal aliases.
     _get_client = get_client
     _get_account = get_account

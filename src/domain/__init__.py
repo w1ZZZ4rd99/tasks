@@ -7,14 +7,17 @@ from .accounts import (
     PremiumAccount,
     SavingsAccount,
 )
+from .audit import AuditEvent, AuditLog
 from .bank import ACCOUNT_TYPES, Bank
 from .client import Client
 from .enums import (
     ANNUAL_RETURNS,
     AccountStatus,
     AssetClass,
+    AuditSeverity,
     ClientStatus,
     Currency,
+    RiskLevel,
     TransactionPriority,
     TransactionStatus,
     TransactionType,
@@ -37,6 +40,8 @@ from .errors import (
 from .exchange import DEFAULT_RATES, ExchangeRates
 from .money import MONEY_QUANT, decimal_nonneg, parse_amount, quantize_money
 from .processor import FeePolicy, TransactionProcessor
+from .reports import AuditReporter
+from .risk import RiskAnalyzer, RiskAssessment
 from .transaction_queue import TransactionQueue
 from .transactions import Transaction
 
@@ -63,6 +68,13 @@ __all__ = [
     "FeePolicy",
     "ExchangeRates",
     "DEFAULT_RATES",
+    "AuditSeverity",
+    "AuditEvent",
+    "AuditLog",
+    "RiskLevel",
+    "RiskAnalyzer",
+    "RiskAssessment",
+    "AuditReporter",
     "DomainError",
     "InvalidOperationError",
     "InsufficientFundsError",

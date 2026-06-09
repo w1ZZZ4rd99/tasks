@@ -8,12 +8,21 @@ from decimal import Decimal
 from typing import Callable
 
 from .accounts import PremiumAccount
-from .enums import TransactionStatus, TransactionType
+from .audit import AuditLog
+from .enums import AuditSeverity, RiskLevel, TransactionType
 from .errors import DomainError, TransactionError
 from .exchange import ExchangeRates
 from .money import quantize_money
+from .risk import RiskAnalyzer
 from .transactions import Transaction
 from .transaction_queue import TransactionQueue
+
+# Maps a risk level to the severity used when auditing its assessment.
+_RISK_SEVERITY = {
+    RiskLevel.LOW: AuditSeverity.INFO,
+    RiskLevel.MEDIUM: AuditSeverity.WARNING,
+    RiskLevel.HIGH: AuditSeverity.CRITICAL,
+}
 
 
 class FeePolicy:
@@ -46,6 +55,9 @@ class TransactionProcessor:
         max_retries: int = 2,
         now: Callable[[], datetime] = datetime.now,
         logger: logging.Logger | None = None,
+        audit: AuditLog | None = None,
+        risk: RiskAnalyzer | None = None,
+        block_at: RiskLevel = RiskLevel.HIGH,
     ) -> None:
         self._bank = bank
         self._exchange = exchange or ExchangeRates()
@@ -54,9 +66,15 @@ class TransactionProcessor:
         self._now = now
         self._logger = logger or logging.getLogger("bank.transactions")
         self.error_log: list[dict] = []
+        self.audit = audit or AuditLog(now=now)
+        self._risk = risk
+        self._block_at = block_at
 
     def process(self, tx: Transaction) -> bool:
         """Process a single transaction; return True on success."""
+        if self._risk is not None and self._risk_blocks(tx):
+            return False
+
         for attempt in range(self._max_retries + 1):
             tx.register_attempt()
             try:
@@ -65,17 +83,61 @@ class TransactionProcessor:
                 # Business-rule violation: deterministic, so do not retry.
                 self._record_error(tx, attempt, exc)
                 tx.mark_failed(str(exc), self._now())
+                self._audit_failure(tx, exc)
                 return False
             except Exception as exc:  # noqa: BLE001 - transient/unexpected, retry
                 self._record_error(tx, attempt, exc)
                 if attempt < self._max_retries:
                     continue
                 tx.mark_failed(f"failed after {tx.attempts} attempts: {exc}", self._now())
+                self._audit_failure(tx, exc)
                 return False
             else:
                 tx.mark_completed(self._now())
+                self.audit.log(
+                    AuditSeverity.INFO, "transaction.completed",
+                    f"{tx.type.value} {tx.amount} {tx.currency.value} completed",
+                    **self._tx_metadata(tx),
+                )
                 return True
         return False
+
+    def _risk_blocks(self, tx: Transaction) -> bool:
+        """Assess risk, audit it, and block the transaction when it is too risky."""
+        assessment = self._risk.assess(tx, self._now())
+        self.audit.log(
+            _RISK_SEVERITY[assessment.level], "risk.assessed", str(assessment),
+            risk_level=assessment.level, score=assessment.score,
+            reasons=assessment.reasons, **self._tx_metadata(tx),
+        )
+        if assessment.level.value < self._block_at.value:
+            return False
+        tx.register_attempt()
+        reason = "blocked by risk analysis: " + ", ".join(assessment.reasons)
+        tx.mark_failed(reason, self._now())
+        self.audit.log(
+            AuditSeverity.CRITICAL, "transaction.blocked", reason,
+            risk_level=assessment.level, reasons=assessment.reasons,
+            error_type="RiskBlocked", **self._tx_metadata(tx),
+        )
+        return True
+
+    def _audit_failure(self, tx: Transaction, exc: Exception) -> None:
+        self.audit.log(
+            AuditSeverity.WARNING, "transaction.failed", str(exc),
+            error_type=type(exc).__name__, **self._tx_metadata(tx),
+        )
+
+    @staticmethod
+    def _tx_metadata(tx: Transaction) -> dict:
+        return {
+            "transaction_id": tx.transaction_id,
+            "type": tx.type.value,
+            "sender": tx.sender,
+            "receiver": tx.receiver,
+            "amount": tx.amount,
+            "currency": tx.currency.value,
+        }
 
     def process_queue(self, queue: TransactionQueue) -> list[Transaction]:
         """Process every ready transaction in the queue (priority order); return them."""

@@ -5,12 +5,14 @@ Run with::
     python -m src.main
 """
 
+import os
 from datetime import datetime
 
 from . import simulation
 from .domain import (
     AccountStatus,
     AssetClass,
+    AuditLog,
     AuditReporter,
     Bank,
     BankAccount,
@@ -28,6 +30,9 @@ from .domain import (
     TransactionType,
     UnderageError,
 )
+
+# Generated artifacts go into a tmp/ folder inside the repo (portable across OSes).
+_TMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tmp")
 
 
 def main() -> None:
@@ -199,17 +204,23 @@ def demo_transactions() -> None:
 
 def demo_audit_and_risk() -> None:
     print("\n=== Audit & risk analysis ===\n")
-    # Set the bank up during business hours; run the processor at night so the
-    # time-based risk rule fires deterministically.
+    # A shared mutable clock: set the bank up during business hours, then move the
+    # whole system to night so both the lockout and the time-based risk rule fire.
     midday = datetime(2026, 6, 9, 12, 0, 0)
     night = datetime(2026, 6, 9, 2, 0, 0)
-    bank = Bank("Demo Bank", now=lambda: midday)
+    clock = {"now": midday}
+    bank = Bank("Demo Bank", now=lambda: clock["now"])
     bank.add_client(Client("Alice", 30, pin="1", client_id="C1"))
     account = bank.open_account("C1", "bank", balance=100000, currency=Currency.USD)
 
     analyzer = RiskAnalyzer(large_amount=10000, frequency_limit=3)
-    processor = TransactionProcessor(bank, risk=analyzer, now=lambda: night)
+    # Stream the audit log to a file as events occur (Day 5: save to memory and file).
+    os.makedirs(_TMP_DIR, exist_ok=True)
+    audit_path = os.path.join(_TMP_DIR, "audit_log.jsonl")
+    audit = AuditLog(file_path=audit_path, now=lambda: clock["now"])
+    processor = TransactionProcessor(bank, risk=analyzer, now=lambda: clock["now"], audit=audit)
 
+    clock["now"] = night  # night falls: money operations are now locked out
     transactions = [
         Transaction(TransactionType.WITHDRAWAL, 100, Currency.USD, sender=account.account_id),
         Transaction(TransactionType.WITHDRAWAL, 200, Currency.USD, sender=account.account_id),
@@ -228,6 +239,7 @@ def demo_audit_and_risk() -> None:
     print(f"\nSuspicious operations: {len(reporter.suspicious_operations())}")
     print(f"Client risk profile: {reporter.client_risk_profile(bank, 'C1')}")
     print(f"Error statistics: {reporter.error_statistics()}")
+    print(f"Audit log saved to {audit_path} ({len(audit)} events)")
 
     print("\n")
     simulation.run()

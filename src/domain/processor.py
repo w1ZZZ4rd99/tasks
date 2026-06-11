@@ -158,10 +158,14 @@ class TransactionProcessor:
     # --- Execution ---------------------------------------------------------------------
 
     def _execute(self, tx: Transaction) -> None:
+        # Money movements obey the same nightly lockout as account management.
+        self._bank.ensure_business_hours()
         if tx.type is TransactionType.DEPOSIT:
-            self._bank.get_account(tx.receiver).deposit(tx.amount)
+            receiver = self._bank.get_account(tx.receiver)
+            receiver.deposit(self._to_account_currency(tx.amount, tx, receiver))
         elif tx.type is TransactionType.WITHDRAWAL:
-            self._bank.get_account(tx.sender).withdraw(tx.amount)
+            sender = self._bank.get_account(tx.sender)
+            sender.withdraw(self._to_account_currency(tx.amount, tx, sender))
         elif tx.type is TransactionType.TRANSFER:
             self._execute_transfer(tx)
         elif tx.type is TransactionType.EXTERNAL_TRANSFER:
@@ -169,21 +173,34 @@ class TransactionProcessor:
         else:  # pragma: no cover - exhaustive by enum
             raise TransactionError(f"Unsupported transaction type: {tx.type}")
 
+    def _to_account_currency(self, amount: Decimal, tx: Transaction, account) -> Decimal:
+        """Convert an amount denominated in the transaction's currency to the account's."""
+        return self._exchange.convert(amount, tx.currency, account.currency)
+
     def _execute_transfer(self, tx: Transaction) -> None:
         sender = self._bank.get_account(tx.sender)
         receiver = self._bank.get_account(tx.receiver)
         self._check_transfer_allowed(sender)
-        sender.withdraw(tx.amount)
-        credit = self._exchange.convert(tx.amount, sender.currency, receiver.currency)
-        receiver.deposit(credit)
+        debit = self._to_account_currency(tx.amount, tx, sender)
+        credit = self._to_account_currency(tx.amount, tx, receiver)
+        balance_before = sender.balance
+        sender.withdraw(debit)
+        try:
+            receiver.deposit(credit)
+        except DomainError:
+            # Keep the transfer atomic: put back exactly what the withdrawal took
+            # (including any account-level fees) before propagating the failure.
+            sender.deposit(balance_before - sender.balance)
+            raise
 
     def _execute_external(self, tx: Transaction) -> None:
         sender = self._bank.get_account(tx.sender)
+        self._check_transfer_allowed(sender)
+        # The fee is denominated in the transaction currency, like the amount.
         fee = self._fees.fee_for(tx.type, tx.amount)
         tx.fee = fee
-        self._check_transfer_allowed(sender)
         # Amount plus fee leaves the bank; there is no internal account to credit.
-        sender.withdraw(tx.amount + fee)
+        sender.withdraw(self._to_account_currency(tx.amount + fee, tx, sender))
 
     @staticmethod
     def _check_transfer_allowed(sender) -> None:

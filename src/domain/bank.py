@@ -95,7 +95,7 @@ class Bank:
         self, client_id: str, account_type: str = "bank", **kwargs
     ) -> AbstractAccount:
         """Open an account of ``account_type`` for a client and link it to them."""
-        self._ensure_business_hours()
+        self.ensure_business_hours()
         client = self._get_client(client_id)
         try:
             account_cls = ACCOUNT_TYPES[account_type]
@@ -108,15 +108,15 @@ class Bank:
         return account
 
     def close_account(self, account_id: str) -> None:
-        self._ensure_business_hours()
+        self.ensure_business_hours()
         self._get_account(account_id).set_status(AccountStatus.CLOSED)
 
     def freeze_account(self, account_id: str) -> None:
-        self._ensure_business_hours()
+        self.ensure_business_hours()
         self._get_account(account_id).set_status(AccountStatus.FROZEN)
 
     def unfreeze_account(self, account_id: str) -> None:
-        self._ensure_business_hours()
+        self.ensure_business_hours()
         self._get_account(account_id).set_status(AccountStatus.ACTIVE)
 
     # --- Security ----------------------------------------------------------------------
@@ -132,7 +132,7 @@ class Bank:
         client.register_failed_attempt()
         return False
 
-    def _ensure_business_hours(self) -> None:
+    def ensure_business_hours(self) -> None:
         """Forbid operations during the nightly lockout window."""
         hour = self._now().hour
         if NIGHT_START <= hour < NIGHT_END:
